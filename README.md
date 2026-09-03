@@ -75,3 +75,10 @@ Produces a single self-contained native executable `kup.exe` in
 `src\KupReport\bin\Release\net10.0\win-x64\publish\`. QuestPDF's native
 libraries are embedded in the executable and extracted on first use to
 `%LOCALAPPDATA%\kup-report\native\<version>\`.
+
+## CI
+
+`.github/workflows/build.yml` publishes `kup.exe` (win-x64, Native AOT) on
+every push and pull request to `main` and uploads it as the `kup-win-x64`
+workflow artifact. Pushing a `v*` tag (e.g. `git tag v1.0.0 && git push --tags`)
+additionally creates a GitHub release with `kup.exe` attached.
