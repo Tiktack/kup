@@ -50,9 +50,9 @@ public static class KupPdfExporter
 
     private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        var fileName = libraryName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-            ? libraryName
-            : $"{libraryName}.dll";
+        var fileName = GetNativeLibraryFileName(libraryName);
+        if (fileName is null)
+            return IntPtr.Zero;
 
         using var resource = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream($"KupReport.Native.{fileName}");
@@ -64,7 +64,8 @@ public static class KupPdfExporter
         var version = typeof(QuestPDF.Settings).Assembly.GetName().Version?.ToString() ?? "0";
         var directory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "kup-report", "native", version);
+            "kup-report", "native", version,
+            $"{GetPlatformName()}-{RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()}");
         var path = Path.Combine(directory, fileName);
 
         if (!File.Exists(path))
@@ -86,6 +87,33 @@ public static class KupPdfExporter
         }
 
         return NativeLibrary.Load(path);
+    }
+
+    private static string? GetNativeLibraryFileName(string libraryName)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(libraryName);
+        if (baseName.StartsWith("lib", StringComparison.Ordinal))
+            baseName = baseName[3..];
+
+        return GetPlatformName() switch
+        {
+            "win" => $"{baseName}.dll",
+            "osx" => $"lib{baseName}.dylib",
+            "linux" => $"lib{baseName}.so",
+            _ => null,
+        };
+    }
+
+    private static string GetPlatformName()
+    {
+        if (OperatingSystem.IsWindows())
+            return "win";
+        if (OperatingSystem.IsMacOS())
+            return "osx";
+        if (OperatingSystem.IsLinux())
+            return "linux";
+
+        return "unknown";
     }
 
     public static void Export(MonthlyKupReport report, ReportIdentity identity, string path)
