@@ -68,17 +68,18 @@ for the Entra ID device flow (override with `KUP_ADO_CLIENT_ID`).
 ## Native AOT publish
 
 ```
-dotnet publish src\KupReport -c Release -r win-x64
+dotnet publish src\KupReport -c Release -r <RID>
 ```
 
-Produces a single self-contained native executable `kup.exe` in
-`src\KupReport\bin\Release\net10.0\win-x64\publish\`. QuestPDF's native
-libraries are embedded in the executable and extracted on first use to
-`%LOCALAPPDATA%\kup-report\native\<version>\`.
+Supported RIDs are `win-x64` and `osx-arm64`. This produces a single
+self-contained native executable in
+`src\KupReport\bin\Release\net10.0\<RID>\publish\`. QuestPDF's matching native
+libraries are embedded in the executable and extracted to the platform's local
+application-data directory on first use.
 
 ## CI
 
-`.github/workflows/build.yml` publishes `kup.exe` (win-x64, Native AOT) on
-every push and pull request to `main` and uploads it as the `kup-win-x64`
-workflow artifact. Pushing a `v*` tag (e.g. `git tag v1.0.0 && git push --tags`)
-additionally creates a GitHub release with `kup.exe` attached.
+`.github/workflows/build.yml` publishes Native AOT executables for `win-x64`
+and `osx-arm64` on every push and pull request to `main`. Pushing a `v*` tag
+(e.g. `git tag v1.0.0 && git push --tags`) additionally creates a GitHub
+release with the Windows executable and macOS archive attached.

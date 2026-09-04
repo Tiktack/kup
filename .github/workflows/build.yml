@@ -17,8 +17,20 @@ env:
 
 jobs:
   build:
-    name: Publish win-x64 (Native AOT)
-    runs-on: windows-latest
+    name: Publish ${{ matrix.rid }} (Native AOT)
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            rid: win-x64
+            artifact: kup-win-x64
+            asset: kup.exe
+          - runner: macos-15
+            rid: osx-arm64
+            artifact: kup-osx-arm64
+            asset: kup-osx-arm64.tar.gz
     steps:
       - uses: actions/checkout@v4
 
@@ -27,16 +39,29 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore src/KupReport -r win-x64
+        run: dotnet restore src/KupReport -r ${{ matrix.rid }}
 
       - name: Publish
-        run: dotnet publish src/KupReport -c Release -r win-x64 --no-restore
+        run: dotnet publish src/KupReport -c Release -r ${{ matrix.rid }} --no-restore
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          $publish = Join-Path "src/KupReport/bin/Release/net10.0" "${{ matrix.rid }}/publish"
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+
+          if ("${{ runner.os }}" -eq "Windows") {
+            Copy-Item (Join-Path $publish "kup.exe") (Join-Path artifacts "${{ matrix.asset }}")
+          }
+          else {
+            tar -czf (Join-Path artifacts "${{ matrix.asset }}") -C $publish kup
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kup-win-x64
-          path: src/KupReport/bin/Release/net10.0/win-x64/publish/kup.exe
+          name: ${{ matrix.artifact }}
+          path: artifacts/${{ matrix.asset }}
           if-no-files-found: error
 
   release:
@@ -49,13 +74,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: kup-win-x64
+          pattern: kup-*
+          path: artifacts
+          merge-multiple: true
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" kup.exe \
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes

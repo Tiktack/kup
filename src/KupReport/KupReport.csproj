@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="QuestPDF" Version="2026.8.0" />
+    <PackageReference Include="QuestPDF" Version="2026.8.0" GeneratePathProperty="true" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
   </ItemGroup>
 
@@ -25,14 +25,12 @@
     <EmbeddedResource Include="Assets\**\*" />
   </ItemGroup>
 
-  <!-- Embed QuestPDF's native libraries so the published output is a single file.
-       They are extracted at runtime by KupPdfExporter's DllImport resolver.
-       Keep the version in sync with the PackageReference above. -->
-  <ItemGroup>
-    <EmbeddedResource Include="$(NuGetPackageRoot)questpdf\2026.8.0\runtimes\win-x64\native\QuestPdfSkia.dll"
-                      LogicalName="KupReport.Native.QuestPdfSkia.dll" Visible="false" />
-    <EmbeddedResource Include="$(NuGetPackageRoot)questpdf\2026.8.0\runtimes\win-x64\native\qpdf.dll"
-                      LogicalName="KupReport.Native.qpdf.dll" Visible="false" />
+  <!-- Embed the QuestPDF native libraries for the selected RID so Native AOT
+       publishes remain single-file on every supported platform. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' and Exists('$(PkgQuestPDF)\runtimes\$(RuntimeIdentifier)\native')">
+    <EmbeddedResource Include="$(PkgQuestPDF)\runtimes\$(RuntimeIdentifier)\native\*"
+                      LogicalName="KupReport.Native.%(Filename)%(Extension)"
+                      Visible="false" />
   </ItemGroup>
 
   <!-- Drop QuestPDF's loose native libraries and default font from the publish
@@ -40,7 +38,7 @@
   <Target Name="PruneQuestPdfPublishFiles" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="'%(Filename)%(Extension)' == 'QuestPdfSkia.dll' or '%(Filename)%(Extension)' == 'qpdf.dll'" />
+                             Condition="'%(Filename)' == 'QuestPdfSkia' or '%(Filename)' == 'qpdf' or '%(Filename)' == 'libQuestPdfSkia' or '%(Filename)' == 'libqpdf'" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
                              Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('LatoFont'))" />
     </ItemGroup>
