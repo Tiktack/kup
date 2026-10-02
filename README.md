@@ -41,7 +41,9 @@ dotnet run --project src\KupReport
    connected, each PR is linked to its Azure Boards work item (GitHub PRs via
    `AB#123` references, ADO PRs via linked work items): the work title column
    shows `{Type} {Id}: {Title}` and the person commissioning column shows the
-   work item's owner. Author/controller names and titles are prefilled from
+   work item's owner. Works whose work item has no owner, or that aren't linked
+   to a work item, fall back to the owner of the most work items in the report
+   (left blank when no work item has an owner). Author/controller names and titles are prefilled from
    Microsoft Graph for whoever the report is for (reusing the ADO login — no
    extra sign-in) and shown as editable prompts before export. Nothing besides
    tokens is persisted between runs.
