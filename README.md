@@ -41,7 +41,8 @@ dotnet run --project src\KupReport
    toward reported hours and appear in the PDF.
 5. After the report, a menu offers *Start over* (recalculate with the previous
    inputs as defaults — handy after adjusting PR hours; changing the month resets
-   working-day and vacation defaults), *Export as PDF*, or *Exit*. The PDF's billing
+   working-day and vacation defaults), *Export as PDF*, *Assign KUP tags* (see
+   below), or *Exit*. The PDF's billing
    month and default filename follow the selected month. It replicates the
    original LaTeX template: Accuris logo, CMU Serif (Computer Modern) fonts, exact
    layout and colors. When Azure DevOps is
@@ -55,6 +56,36 @@ dotnet run --project src\KupReport
    extra sign-in) and shown as editable prompts before export. Nothing besides
    tokens is persisted between runs.
 
+## Assigning KUP tags automatically
+
+*Assign KUP tags* writes `[KUP:x]` tags into merged **GitHub** PRs so the report
+reaches the target hours (Azure DevOps PRs are never modified; their tags count
+as-is). Two modes:
+
+- **Fill remaining hours** — spreads *target − already reported* hours across
+  merged GitHub PRs that have no tag. Existing tags stay untouched.
+- **Full recalculation** — spreads *target − ADO hours* across all merged GitHub
+  PRs, replacing existing tags (removed from the title/description, then one
+  tag appended to the description). PRs whose hours don't change are left alone.
+
+Hours are split proportionally to each PR's size, read from GitHub:
+
+```
+weight = √(additions + ½·deletions) + 3·√(changed files)
+```
+
+Square roots give diminishing returns, so a huge (often generated) PR doesn't
+swallow the whole budget, and deletions count half as much as additions. The
+budget is rounded **down** to 0.5h (never over the target); every tagged PR gets
+at least 0.5h — PRs whose share would be smaller are pinned to 0.5h and the
+rest is re-split among the others — and shares are rounded to 0.5h steps by
+largest remainder so the total is exact. If the budget can't give every PR
+0.5h, the largest PRs get 0.5h each and the rest get no tag.
+
+A preview table (lines, files, current and new hours, resulting total) is shown
+and nothing is written until you confirm. The tag is appended to the PR
+description as its own paragraph, then the report is refreshed.
+
 ## Project structure
 
 ```
@@ -64,7 +95,7 @@ src/KupReport/
   Authentication/       device-flow logins (GitHub, Entra ID) + credential cache
   GitHub/               GitHub REST API client + DTOs (source-generated JSON)
   AzureDevOps/          Azure DevOps REST API client + DTOs
-  Reporting/            KUP tag parsing, report model, HR + weekday calendars
+  Reporting/            KUP tag parsing + auto-tag allocation, report model, HR + weekday calendars
   Export/               QuestPDF works-registration report exporter
   Assets/               embedded logo + CMU Serif fonts (SIL OFL)
   Cli/                  Spectre.Console UI: welcome, prompts, report rendering

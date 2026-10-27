@@ -87,15 +87,41 @@ public static class Prompts
         var choice = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title("What next?")
-                .AddChoices("Start over", "Export as PDF", "Exit"));
+                .AddChoices("Start over", "Export as PDF", "Assign KUP tags", "Exit"));
 
         return choice switch
         {
             "Start over" => PostReportAction.StartOver,
             "Export as PDF" => PostReportAction.ExportPdf,
+            "Assign KUP tags" => PostReportAction.AssignTags,
             _ => PostReportAction.Exit,
         };
     }
+
+    /// <summary>Asks how KUP tags should be assigned; null to go back.</summary>
+    public static AutoTagMode? AskAutoTagMode()
+    {
+        const string fill = "Fill remaining hours (untagged PRs only)";
+        const string full = "Full recalculation (replace all tags to match the target)";
+
+        return AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Assign [[KUP:x]] tags to merged GitHub PRs:")
+                .AddChoices(fill, full, "Back")) switch
+        {
+            fill => AutoTagMode.FillRemaining,
+            full => AutoTagMode.FullRecalculation,
+            _ => null,
+        };
+    }
+
+    /// <summary>Confirms writing the proposed tags to GitHub.</summary>
+    public static bool ConfirmAutoTag(int count) =>
+        AnsiConsole.Prompt(
+            new ConfirmationPrompt($"Update {count} GitHub PR(s) with these [[KUP:x]] tags?")
+            {
+                DefaultValue = false,
+            });
 
     public static ReportInput AskReportInput(
         string? defaultEmail, DateOnly today, ReportInput? previous)
@@ -216,5 +242,6 @@ public enum PostReportAction
 {
     StartOver,
     ExportPdf,
+    AssignTags,
     Exit,
 }

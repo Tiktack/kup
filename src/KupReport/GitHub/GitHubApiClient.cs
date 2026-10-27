@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using KupReport.Reporting;
 
@@ -122,6 +123,49 @@ public sealed class GitHubApiClient : IDisposable
                 Url: i.HtmlUrl,
                 State: i.PullRequest.MergedAt is not null ? "merged" : i.State))
             .ToList();
+    }
+
+    /// <summary>Fetches a pull request's current title, body and diff size.</summary>
+    public async Task<GitHubPullRequest> GetPullRequestAsync(string repository, int number, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync(PullRequestUrl(repository, number), ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await DescribeErrorAsync(response, ct));
+
+        return JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(ct), GitHubJsonContext.Default.GitHubPullRequest)
+            ?? throw new InvalidOperationException("Empty pull request response.");
+    }
+
+    /// <summary>Updates a pull request's title and/or body; null leaves the field unchanged.</summary>
+    public async Task UpdatePullRequestAsync(
+        string repository, int number, string? title, string? body, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Serialize(
+            new GitHubPullRequestUpdate { Title = title, Body = body },
+            GitHubJsonContext.Default.GitHubPullRequestUpdate);
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await _http.PatchAsync(PullRequestUrl(repository, number), content, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await DescribeErrorAsync(response, ct));
+    }
+
+    private static string PullRequestUrl(string repository, int number) =>
+        $"https://api.github.com/repos/{string.Join('/', repository.Split('/').Select(Uri.EscapeDataString))}/pulls/{number}";
+
+    private static async Task<string> DescribeErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var body = await response.Content.ReadAsStringAsync(ct);
+        string? message = null;
+        try
+        {
+            message = JsonSerializer.Deserialize(body, GitHubJsonContext.Default.GitHubError)?.Message;
+        }
+        catch (JsonException)
+        {
+        }
+
+        return $"GitHub returned {(int)response.StatusCode}: {message ?? body}";
     }
 
     public async Task<DeviceCodeResponse> RequestDeviceCodeAsync(string clientId, CancellationToken ct)

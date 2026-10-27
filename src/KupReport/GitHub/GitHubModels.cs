@@ -59,6 +59,26 @@ public sealed class SearchPullRequest
     [JsonPropertyName("merged_at")] public DateTimeOffset? MergedAt { get; set; }
 }
 
+public sealed class GitHubPullRequest
+{
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("body")] public string? Body { get; set; }
+    [JsonPropertyName("additions")] public int Additions { get; set; }
+    [JsonPropertyName("deletions")] public int Deletions { get; set; }
+    [JsonPropertyName("changed_files")] public int ChangedFiles { get; set; }
+}
+
+public sealed class GitHubPullRequestUpdate
+{
+    [JsonPropertyName("title")] public string? Title { get; set; }
+    [JsonPropertyName("body")] public string? Body { get; set; }
+}
+
+public sealed class GitHubError
+{
+    [JsonPropertyName("message")] public string? Message { get; set; }
+}
+
 public sealed class TokenCache
 {
     [JsonPropertyName("access_token")] public string AccessToken { get; set; } = "";
@@ -71,5 +91,8 @@ public sealed class TokenCache
 [JsonSerializable(typeof(List<GitHubEmail>))]
 [JsonSerializable(typeof(UserSearchResult))]
 [JsonSerializable(typeof(SearchResult))]
+[JsonSerializable(typeof(GitHubPullRequest))]
+[JsonSerializable(typeof(GitHubPullRequestUpdate))]
+[JsonSerializable(typeof(GitHubError))]
 [JsonSerializable(typeof(TokenCache))]
 public sealed partial class GitHubJsonContext : JsonSerializerContext;
