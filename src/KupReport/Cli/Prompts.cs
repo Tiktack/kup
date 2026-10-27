@@ -1,9 +1,11 @@
+using System.Globalization;
 using KupReport.Reporting;
 using Spectre.Console;
 
 namespace KupReport.Cli;
 
-public sealed record ReportInput(string Email, int WorkingDays, int VacationDays, int TargetPercent, int DaysBefore);
+public sealed record ReportInput(
+    string Email, DateOnly MonthStart, int WorkingDays, int VacationDays, int TargetPercent, int DaysBefore);
 
 public static class Prompts
 {
@@ -96,7 +98,7 @@ public static class Prompts
     }
 
     public static ReportInput AskReportInput(
-        string? defaultEmail, string monthName, int calendarWeekdays, int? hrWorkingDays, ReportInput? previous)
+        string? defaultEmail, DateOnly today, ReportInput? previous)
     {
         var emailPrompt = new TextPrompt<string>("Email:")
             .Validate(email => email.Contains('@')
@@ -108,20 +110,37 @@ public static class Prompts
 
         var email = AnsiConsole.Prompt(emailPrompt).Trim();
 
+        var month = AnsiConsole.Prompt(
+            new TextPrompt<string>($"Report month in {today.Year} ([grey]e.g. OCT, SEP, MAY[/]):")
+                .DefaultValue((previous?.MonthStart ?? today).ToString("MMM", CultureInfo.InvariantCulture).ToUpperInvariant())
+                .Validate(value => DateTime.TryParseExact(
+                    value.Trim(), "MMM", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+                    ? ValidationResult.Success()
+                    : ValidationResult.Error(
+                        "[red]Enter a three-letter month (JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT, NOV, DEC)[/]")));
+
+        var monthNumber = DateTime.ParseExact(
+            month.Trim(), "MMM", CultureInfo.InvariantCulture, DateTimeStyles.None).Month;
+        var monthStart = new DateOnly(today.Year, monthNumber, 1);
+        var monthName = monthStart.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+        var calendarWeekdays = WorkingCalendar.CountWeekdays(monthStart.Year, monthStart.Month);
+        var hrWorkingDays = HrCalendar.GetWorkingDays(monthStart.Year, monthStart.Month);
+        var previousMonthInput = previous?.MonthStart == monthStart ? previous : null;
+
         AnsiConsole.MarkupLine(
             $"[grey]Working days in {Markup.Escape(monthName)}: calendar [/][bold]{calendarWeekdays}[/][grey], HR [/]" +
             (hrWorkingDays is { } hr ? $"[bold]{hr}[/]" : "[red]n/a[/]"));
 
         var workingDays = AnsiConsole.Prompt(
             new TextPrompt<int>("Working days (override if needed):")
-                .DefaultValue(previous?.WorkingDays ?? hrWorkingDays ?? calendarWeekdays)
+                .DefaultValue(previousMonthInput?.WorkingDays ?? hrWorkingDays ?? calendarWeekdays)
                 .Validate(days => days is >= 1 and <= 31
                     ? ValidationResult.Success()
                     : ValidationResult.Error("[red]Must be between 1 and 31[/]")));
 
         var vacationDays = AnsiConsole.Prompt(
-            new TextPrompt<int>("Vacation days taken this month:")
-                .DefaultValue(previous?.VacationDays ?? 0)
+            new TextPrompt<int>($"Vacation days taken in {Markup.Escape(monthName)}:")
+                .DefaultValue(previousMonthInput?.VacationDays ?? 0)
                 .Validate(days => days >= 0 && days <= workingDays
                     ? ValidationResult.Success()
                     : ValidationResult.Error($"[red]Must be between 0 and {workingDays}[/]")));
@@ -140,7 +159,7 @@ public static class Prompts
                     ? ValidationResult.Success()
                     : ValidationResult.Error("[red]Must be between 0 and 10[/]")));
 
-        return new ReportInput(email, workingDays, vacationDays, targetPercent, daysBefore);
+        return new ReportInput(email, monthStart, workingDays, vacationDays, targetPercent, daysBefore);
     }
 
     /// <summary>Asks for the people named on the PDF report, with editable defaults.</summary>
