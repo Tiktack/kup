@@ -205,13 +205,12 @@ try
     while (true)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
-        var monthStart = new DateOnly(today.Year, today.Month, 1);
-        var calendarWeekdays = WorkingCalendar.CountWeekdays(today.Year, today.Month);
-        var hrWorkingDays = HrCalendar.GetWorkingDays(today.Year, today.Month);
-
-        var input = Prompts.AskReportInput(
-            defaultEmail, today.ToString("MMMM yyyy"), calendarWeekdays, hrWorkingDays, lastInput);
+        var input = Prompts.AskReportInput(defaultEmail, today, lastInput);
         lastInput = input;
+        var from = input.MonthStart.AddDays(-input.DaysBefore);
+        var to = input.MonthStart == new DateOnly(today.Year, today.Month, 1)
+            ? today
+            : input.MonthStart.AddMonths(1).AddDays(-1);
 
         MonthlyKupReport report;
         try
@@ -220,7 +219,6 @@ try
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync("Fetching pull requests...", async ctx =>
                 {
-                    var from = monthStart.AddDays(-input.DaysBefore);
                     var pullRequests = new List<CollectedPullRequest>();
 
                     ctx.Status("Resolving GitHub user...");
@@ -231,7 +229,7 @@ try
                     else
                     {
                         ctx.Status("Fetching GitHub pull requests...");
-                        pullRequests.AddRange(await githubApi.SearchPullRequestsAsync(login, from, today, cts.Token));
+                        pullRequests.AddRange(await githubApi.SearchPullRequestsAsync(login, from, to, cts.Token));
                     }
 
                     if (adoSession is not null)
@@ -245,7 +243,7 @@ try
                         {
                             ctx.Status("Fetching Azure DevOps pull requests...");
                             pullRequests.AddRange(await adoApi.GetPullRequestsAsync(
-                                adoSession.Organization, adoId, from, cts.Token));
+                                adoSession.Organization, adoId, from, to, cts.Token));
                         }
 
                         ctx.Status("Linking work items...");
@@ -254,7 +252,7 @@ try
                     }
 
                     return ReportBuilder.Build(
-                        input.Email, from, today, input.WorkingDays, input.VacationDays, input.TargetPercent,
+                        input.Email, from, to, input.WorkingDays, input.VacationDays, input.TargetPercent,
                         pullRequests);
                 });
         }
@@ -282,7 +280,7 @@ try
 
                 case PostReportAction.ExportPdf:
                     var identity = await ResolveIdentityAsync(input.Email);
-                    var pdfPath = Prompts.AskPdfPath($"KUP-{input.Email.Split('@')[0]}-{today:yyyy-MM}.pdf");
+                    var pdfPath = Prompts.AskPdfPath($"KUP-{input.Email.Split('@')[0]}-{input.MonthStart:yyyy-MM}.pdf");
                     try
                     {
                         AnsiConsole.Status()

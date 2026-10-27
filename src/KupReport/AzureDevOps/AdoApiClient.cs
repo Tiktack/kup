@@ -93,9 +93,9 @@ public sealed class AdoApiClient : IDisposable
         return data?.AuthenticatedUser;
     }
 
-    /// <summary>Lists completed PRs created by the given identity, closed on or after the given date.</summary>
+    /// <summary>Lists completed PRs created by the given identity, closed in the inclusive date range.</summary>
     public async Task<List<CollectedPullRequest>> GetPullRequestsAsync(
-        string organization, string creatorId, DateOnly from, CancellationToken ct)
+        string organization, string creatorId, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var results = new List<CollectedPullRequest>();
         const int pageSize = 100;
@@ -105,7 +105,8 @@ public sealed class AdoApiClient : IDisposable
             var url = $"https://dev.azure.com/{organization}/_apis/git/pullrequests" +
                       $"?searchCriteria.status=completed" +
                       $"&searchCriteria.creatorId={creatorId}" +
-                      $"&searchCriteria.minTime={from:yyyy-MM-dd}" +
+                      $"&searchCriteria.minTime={from:yyyy-MM-dd}T00:00:00Z" +
+                      $"&searchCriteria.maxTime={to.AddDays(1):yyyy-MM-dd}T00:00:00Z" +
                       $"&searchCriteria.queryTimeRangeType=closed" +
                       $"&$top={pageSize}&$skip={skip}&api-version=7.1";
 
@@ -122,11 +123,16 @@ public sealed class AdoApiClient : IDisposable
 
             foreach (var pr in page.Value)
             {
+                var closedAt = pr.ClosedDate ?? pr.CreationDate;
+                var closedDate = DateOnly.FromDateTime(closedAt.UtcDateTime);
+                if (closedDate < from || closedDate > to)
+                    continue;
+
                 var project = Uri.EscapeDataString(pr.Repository.Project.Name);
                 var repo = Uri.EscapeDataString(pr.Repository.Name);
                 results.Add(new CollectedPullRequest(
                     Source: PullRequestSource.AzureDevOps,
-                    CreatedAt: pr.ClosedDate ?? pr.CreationDate,
+                    CreatedAt: closedAt,
                     Repository: $"{pr.Repository.Project.Name}/{pr.Repository.Name}",
                     Number: pr.PullRequestId,
                     Title: pr.Title,

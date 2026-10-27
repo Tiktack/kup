@@ -7,6 +7,9 @@ public sealed record ReportIdentity(
     string ManagerName,
     string ManagerTitle);
 
+/// <summary>Person commissioning a work (the owner of its Azure Boards work item).</summary>
+public sealed record WorkOwner(string Name, string? Email);
+
 public sealed record PullRequestEntry(
     DateTimeOffset CreatedAt,
     string Repository,
@@ -18,6 +21,9 @@ public sealed record PullRequestEntry(
     WorkItemInfo? WorkItem)
 {
     public bool IsMerged => State.Equals("merged", StringComparison.OrdinalIgnoreCase);
+
+    public WorkOwner? Owner =>
+        WorkItem?.OwnerName is { Length: > 0 } name ? new WorkOwner(name, WorkItem.OwnerEmail) : null;
 }
 
 public sealed record MonthlyKupReport(
@@ -35,4 +41,21 @@ public sealed record MonthlyKupReport(
     public decimal TargetHours => AvailableHours * TargetPercent / 100m;
     public decimal ReportedPercent => AvailableHours > 0 ? TotalKupHours / AvailableHours * 100m : 0m;
     public decimal RemainingHours => TargetHours - TotalKupHours;
+
+    /// <summary>Merged PRs with a [KUP:x] tag - the works listed in the PDF.</summary>
+    public IEnumerable<PullRequestEntry> ReportedEntries => Entries.Where(e => e.IsMerged && e.KupHours is not null);
+
+    /// <summary>
+    /// Owner of the most distinct work items among the reported works (ties go to
+    /// more PRs, then name). Used as the commissioning person for works whose work
+    /// item has no owner or that aren't linked to a work item; null when none has one.
+    /// </summary>
+    public WorkOwner? DefaultOwner => ReportedEntries
+        .Where(e => e.Owner is not null)
+        .GroupBy(e => e.Owner!.Email is { Length: > 0 } email ? email : e.Owner!.Name, StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(g => g.Select(e => e.WorkItem!.Url).Distinct(StringComparer.OrdinalIgnoreCase).Count())
+        .ThenByDescending(g => g.Count())
+        .ThenBy(g => g.First().Owner!.Name, StringComparer.OrdinalIgnoreCase)
+        .Select(g => g.First().Owner)
+        .FirstOrDefault();
 }

@@ -229,10 +229,9 @@ public static class KupPdfExporter
                 HeaderCell(header.Cell(), "Osoba zlecająca wykonanie Utworu", "", "(Person commissioning the Work)");
             });
 
+            var defaultOwner = report.DefaultOwner;
             var index = 0;
-            foreach (var entry in report.Entries
-                         .Where(e => e.IsMerged && e.KupHours is not null)
-                         .OrderByDescending(e => e.CreatedAt))
+            foreach (var entry in report.ReportedEntries.OrderByDescending(e => e.CreatedAt))
             {
                 index++;
                 BodyCell(table.Cell()).Text(index.ToString()).FontSize(10);
@@ -257,13 +256,13 @@ public static class KupPdfExporter
                 BodyCell(table.Cell()).Text(entry.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd"));
                 BodyCell(table.Cell()).Text(text =>
                 {
-                    if (entry.WorkItem?.OwnerName is not { Length: > 0 } owner)
+                    if ((entry.Owner ?? defaultOwner) is not { } owner)
                         return;
 
-                    if (entry.WorkItem.OwnerEmail is { Length: > 0 } email)
-                        text.Hyperlink(owner, $"mailto:{email}").FontColor(LatexBlue);
+                    if (owner.Email is { Length: > 0 } email)
+                        text.Hyperlink(owner.Name, $"mailto:{email}").FontColor(LatexBlue);
                     else
-                        text.Span(owner);
+                        text.Span(owner.Name);
                 });
             }
         });

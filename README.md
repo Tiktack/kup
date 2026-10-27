@@ -1,6 +1,6 @@
 # kup-report
 
-CLI tool that reports KUP hours from your GitHub pull requests for the current month.
+CLI tool that reports KUP hours from your pull requests for a selected month.
 
 Each PR should contain a tag in its title or description: `[KUP:1]` or `[KUP:1.5]`
 (hours as an integer or with one decimal). The tool sums the hours and prints a report.
@@ -23,25 +23,34 @@ dotnet run --project src\KupReport
    authentication menu), or *Exit*.
 3. Calculating prompts for an email (always defaults to the one attached to your
    GitHub account — enter someone else's email to generate their
-   report), the number of working days in the current month (shows both the
-   calendar weekday count and the HR calendar value, defaulting to HR,
+   report), then a three-letter month in the current year (`JAN`, `FEB`, `MAR`,
+   `APR`, `MAY`, `JUN`, `JUL`, `AUG`, `SEP`, `OCT`, `NOV`, or `DEC`, case-insensitive;
+   press Enter for the current month). It then asks for the number of working days
+   in the selected month (shows both the calendar weekday count and the HR
+   calendar value, defaulting to HR,
    overridable), vacation days taken, the target KUP percentage (default 70%),
    and "days before" — how many trailing days of the previous month to include
    (default 0), since KUP is usually reported a few days before month end.
+   The current month's period ends today; other months cover the full calendar
+   month. "Days before" extends the start relative to the selected month.
 4. Resolves the email to a GitHub login and an Azure DevOps identity, fetches
    all matching PRs (GitHub: created in the period; Azure DevOps: completed
-   since the period start) and renders a table with the `[KUP:x]` hours, a
+   in the period) and renders a table with the `[KUP:x]` hours, a
    summary (target vs reported hours) and a coverage chart. Open and closed
    unmerged GitHub PRs remain visible in the table, but only merged PRs count
    toward reported hours and appear in the PDF.
 5. After the report, a menu offers *Start over* (recalculate with the previous
-   inputs as defaults — handy after adjusting PR hours), *Export as PDF*, or
-   *Exit*. The PDF replicates the original LaTeX template: Accuris logo, CMU
-   Serif (Computer Modern) fonts, exact layout and colors. When Azure DevOps is
+   inputs as defaults — handy after adjusting PR hours; changing the month resets
+   working-day and vacation defaults), *Export as PDF*, or *Exit*. The PDF's billing
+   month and default filename follow the selected month. It replicates the
+   original LaTeX template: Accuris logo, CMU Serif (Computer Modern) fonts, exact
+   layout and colors. When Azure DevOps is
    connected, each PR is linked to its Azure Boards work item (GitHub PRs via
    `AB#123` references, ADO PRs via linked work items): the work title column
    shows `{Type} {Id}: {Title}` and the person commissioning column shows the
-   work item's owner. Author/controller names and titles are prefilled from
+   work item's owner. Works whose work item has no owner, or that aren't linked
+   to a work item, fall back to the owner of the most work items in the report
+   (left blank when no work item has an owner). Author/controller names and titles are prefilled from
    Microsoft Graph for whoever the report is for (reusing the ADO login — no
    extra sign-in) and shown as editable prompts before export. Nothing besides
    tokens is persisted between runs.
