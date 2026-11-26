@@ -202,6 +202,117 @@ try
         return identity;
     }
 
+    // Proposes [KUP:x] tags for merged GitHub PRs and writes them after confirmation.
+    // Returns the PR list refreshed with the latest GitHub titles/bodies (including
+    // written tags), or null when cancelled before anything was read.
+    async Task<List<CollectedPullRequest>?> AssignKupTagsAsync(
+        MonthlyKupReport report, List<CollectedPullRequest> pullRequests)
+    {
+        if (Prompts.AskAutoTagMode() is not { } mode)
+            return null;
+
+        var eligible = pullRequests.Where(pr => KupAutoTagger.IsCandidate(pr, mode)).ToList();
+        if (eligible.Count == 0)
+        {
+            AnsiConsole.MarkupLine(mode == AutoTagMode.FillRemaining
+                ? "[yellow]No merged GitHub PRs without a [[KUP:x]] tag.[/]"
+                : "[yellow]No merged GitHub PRs to tag.[/]");
+            return null;
+        }
+
+        var results = new AutoTagCandidate?[eligible.Count];
+        var readErrors = new string?[eligible.Count];
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("Reading PR sizes...", async ctx =>
+            {
+                var done = 0;
+                await Parallel.ForEachAsync(
+                    Enumerable.Range(0, eligible.Count),
+                    new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cts.Token },
+                    async (i, ct) =>
+                    {
+                        var pr = eligible[i];
+                        try
+                        {
+                            var details = await githubApi.GetPullRequestAsync(pr.Repository, pr.Number, ct);
+                            results[i] = new AutoTagCandidate(
+                                pr, details.Title, details.Body,
+                                new PullRequestChangeStats(details.Additions, details.Deletions, details.ChangedFiles));
+                        }
+                        catch (Exception ex) when (!ct.IsCancellationRequested)
+                        {
+                            readErrors[i] = ex.Message;
+                        }
+                        ctx.Status($"Reading PR sizes ({Interlocked.Increment(ref done)}/{eligible.Count})...");
+                    });
+            });
+
+        for (var i = 0; i < eligible.Count; i++)
+        {
+            if (readErrors[i] is { } error)
+                AnsiConsole.MarkupLine(
+                    $"[yellow]Skipped[/] {Markup.Escape($"{eligible[i].Repository}#{eligible[i].Number}")}: {Markup.Escape(error)}");
+        }
+
+        var candidates = results.OfType<AutoTagCandidate>().ToList();
+
+        // Latest title/body per PR, so the rebuilt report matches what the plan saw.
+        var latest = candidates.ToDictionary(c => c.PullRequest, c => (c.Title, c.Body));
+        List<CollectedPullRequest> WithLatestText() => pullRequests
+            .Select(pr => latest.TryGetValue(pr, out var text) ? pr with { Title = text.Title, Body = text.Body } : pr)
+            .ToList();
+
+        var plan = KupAutoTagger.Plan(mode, report.TargetHours, pullRequests, candidates);
+        ReportRenderer.RenderAutoTagPlan(plan, report);
+        AnsiConsole.WriteLine();
+
+        var changes = plan.Changes;
+        if (changes.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[grey]Nothing to update.[/]");
+            return WithLatestText();
+        }
+
+        if (!Prompts.ConfirmAutoTag(changes.Count))
+            return WithLatestText();
+
+        var updatedCount = 0;
+        var writeErrors = new List<string>();
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("Updating pull requests...", async ctx =>
+            {
+                foreach (var change in changes)
+                {
+                    var pr = change.Candidate.PullRequest;
+                    ctx.Status($"Updating pull requests ({updatedCount + writeErrors.Count + 1}/{changes.Count})...");
+                    try
+                    {
+                        await githubApi.UpdatePullRequestAsync(
+                            pr.Repository, pr.Number,
+                            change.TitleChanged ? change.NewTitle : null,
+                            change.BodyChanged ? change.NewBody ?? "" : null,
+                            cts.Token);
+                        latest[pr] = (change.NewTitle, change.NewBody);
+                        updatedCount++;
+                    }
+                    catch (Exception ex) when (!cts.IsCancellationRequested)
+                    {
+                        writeErrors.Add($"{pr.Repository}#{pr.Number}: {ex.Message}");
+                    }
+                }
+            });
+
+        foreach (var error in writeErrors)
+            AnsiConsole.MarkupLine($"[red]Failed[/] {Markup.Escape(error)}");
+        AnsiConsole.MarkupLine(updatedCount > 0
+            ? $"[green]Updated {updatedCount} pull request(s).[/]"
+            : "[yellow]No pull requests were updated.[/]");
+
+        return WithLatestText();
+    }
+
     while (true)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -212,10 +323,13 @@ try
             ? today
             : input.MonthStart.AddMonths(1).AddDays(-1);
 
-        MonthlyKupReport report;
+        MonthlyKupReport BuildReport(IEnumerable<CollectedPullRequest> prs) => ReportBuilder.Build(
+            input.Email, from, to, input.WorkingDays, input.VacationDays, input.TargetPercent, prs);
+
+        List<CollectedPullRequest> collected;
         try
         {
-            report = await AnsiConsole.Status()
+            collected = await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync("Fetching pull requests...", async ctx =>
                 {
@@ -251,9 +365,7 @@ try
                         pullRequests = await enricher.EnrichAsync(pullRequests, cts.Token);
                     }
 
-                    return ReportBuilder.Build(
-                        input.Email, from, to, input.WorkingDays, input.VacationDays, input.TargetPercent,
-                        pullRequests);
+                    return pullRequests;
                 });
         }
         catch (OperationCanceledException)
@@ -266,6 +378,7 @@ try
             continue;
         }
 
+        var report = BuildReport(collected);
         ReportRenderer.Render(report);
         AnsiConsole.WriteLine();
 
@@ -292,6 +405,17 @@ try
                     {
                         AnsiConsole.MarkupLine($"[red]PDF export failed:[/] {Markup.Escape(ex.Message)}");
                     }
+                    break;
+
+                case PostReportAction.AssignTags:
+                    var retagged = await AssignKupTagsAsync(report, collected);
+                    if (retagged is not null && !retagged.SequenceEqual(collected))
+                    {
+                        collected = retagged;
+                        report = BuildReport(collected);
+                        ReportRenderer.Render(report);
+                    }
+                    AnsiConsole.WriteLine();
                     break;
 
                 case PostReportAction.Exit:
